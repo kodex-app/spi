@@ -1,0 +1,9 @@
+[versions]
+pf4j = "3.15.0"
+okhttp = "5.4.0"
+jackson = "3.1.4"
+
+[libraries]
+pf4j = { module = "org.pf4j:pf4j", version.ref = "pf4j" }
+okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
+jackson-databind = { module = "tools.jackson.core:jackson-databind", version.ref = "jackson" }
