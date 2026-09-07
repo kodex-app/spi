@@ -4,6 +4,7 @@ import dev.kodex.spi.KodexExtension;
 import dev.kodex.spi.MediaKind;
 import dev.kodex.spi.ProviderSettings;
 import dev.kodex.spi.common.http.ProviderRateLimitException;
+import dev.kodex.spi.common.http.SourceUnavailableException;
 import dev.kodex.spi.content.filter.FilterList;
 
 import java.nio.charset.StandardCharsets;
@@ -25,10 +26,22 @@ import java.util.Map;
  *
  * <p>Flow: browse ({@link #popular}/{@link #latest}) or {@link #search} → user adds a series to a WEB
  * library → {@link #listChapters} drives updates/auto-download → {@link #pageList} yields the images
- * to read or download. All methods should fail soft (return empty) rather than throw — with one
- * exception: an upstream rate limit (HTTP 429) should be signalled by throwing
- * {@link ProviderRateLimitException} so the core can back off and retry (a download
- * waits out the limit instead of failing the chapter), rather than being mistaken for empty content.
+ * to read or download.
+ *
+ * <p><b>Report failures, don't return empty.</b> An empty result means "the site has nothing here",
+ * and nothing else — it is what the apps render as an empty shelf. A request that failed is not that,
+ * so throw:
+ * <ul>
+ *   <li>{@link SourceUnavailableException} when the upstream could not be reached, answered non-2xx,
+ *       or sent a body this source cannot parse. The core turns it into a 502 carrying the message,
+ *       so the user sees <em>why</em> the source came up blank instead of "nothing to show here".</li>
+ *   <li>{@link ProviderRateLimitException} for an upstream rate limit (HTTP 429), so the core can back
+ *       off and retry — a download waits out the limit instead of failing the chapter.</li>
+ * </ul>
+ *
+ * <p>Throwing is safe on every path: a library refresh logs and skips the series, and a download job
+ * fails only itself. Genuinely empty answers (a search with no matches, a series with no chapters yet)
+ * still return an empty result — that is the one case an empty result is honest about.
  */
 public interface ContentSource extends KodexExtension {
 
@@ -120,9 +133,10 @@ public interface ContentSource extends KodexExtension {
      * The text content of a chapter, for {@link MediaKind#BOOK} sources (the text counterpart of
      * {@link #pageList}). The core packages the returned HTML into an EPUB to download or stream — the
      * source never writes to disk. COMIC sources don't override this (the default throws); BOOK sources
-     * must, and should return an empty {@link #pageList}. Should fail soft (return empty html) rather than
-     * throw — except on an upstream rate limit, where throwing
-     * {@link ProviderRateLimitException} lets the core wait and retry the download.
+     * must, and should return an empty {@link #pageList}. A chapter that could not be fetched throws
+     * {@link SourceUnavailableException} rather than returning empty html — an empty chapter would be
+     * downloaded, imported, and cached as a blank read — and an upstream rate limit throws
+     * {@link ProviderRateLimitException} so the core waits and retries the download.
      */
     default SourceChapterContent chapterContent(String chapterExternalId, ProviderSettings settings) {
         throw new UnsupportedOperationException("chapterContent is only supported by BOOK sources");
